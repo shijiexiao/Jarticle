@@ -13,7 +13,7 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, onMounted, onUnmounted, ref } from 'vue';
+import { defineComponent, onMounted, onUnmounted, ref, watch } from 'vue';
 import useClickOutside from '../hooks/useClickOutside';
 
 export default defineComponent({
@@ -31,6 +31,14 @@ export default defineComponent({
       isOpen.value = !isOpen.value;
     };
     const isClickOutside = useClickOutside(dropdownRef);
+    // 更新的时候不会执行的，所以你得检测他的变化
+    watch(isClickOutside, () => {
+      if (isOpen.value && isClickOutside.value) {
+        console.log(isOpen.value, isClickOutside.value);
+        isOpen.value = false;
+      }
+    });
+
     return { isOpen, toggleOpen, dropdownRef };
   }
 });

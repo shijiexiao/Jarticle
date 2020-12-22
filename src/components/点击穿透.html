@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>阻止点击穿透/实现点击穿透</title>
+  <style>
+    div{
+      float: left;
+    }
+    .under{
+      width: 300px;
+      height: 150px;
+      padding: 20px;
+      margin: 20px;
+      background: #5b7e91;
+    }
+    .up{
+      width: 50px;
+      height: 50px;
+      line-height: 50px;
+      border-radius: 10px;
+      background: #ec6800;
+      text-align: center;
+      color: #fff;
+    }
+    .noclick{
+      pointer-events: none;  /* 上层加上这句样式可以实现点击穿透 */
+    }
+  </style>
+</head>
+<body>
+  <div class="under" onclick="under()">
+    <p>阻止点击穿透</p>
+    <div class="up" onclick="up()">点我</div>
+  </div>
+
+  <div class="under" onclick="under()">
+    <p>点击穿透</p>
+    <div class="up noclick" onclick="up()">点我</div>
+  </div>
+  <script>
+    var under = function() {
+      alert("点击下层")
+    }
+    var up = function() {
+      event.stopPropagation();    // 上层加上这行代码，可以阻止点击穿透
+      alert("点击上层")
+    }
+  </script>
+</body>
+</html>
