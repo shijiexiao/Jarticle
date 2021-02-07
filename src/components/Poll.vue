@@ -18,9 +18,13 @@
           </div>
           <div v-else :class="{ 'ans-voted': true, selected: a.selected }">
             <span class="txt">
-                {{a.text}}
-            <img   width="21" height="18" src="https://search-operate.cdn.bcebos.com/700580fdb772af2fdf30cfcbcadd7c5e.png"    class="duigou2"/>
-
+              {{a.text}}
+              <img
+                width="21"
+                height="18"
+                src="https://search-operate.cdn.bcebos.com/700580fdb772af2fdf30cfcbcadd7c5e.png"
+                class="duigou2"
+              />
             </span>
             <span v-if="a.percent" class="percent" v-text="a.percent"></span>
           </div>
@@ -38,10 +42,7 @@
             <span class="txt" v-html="a.text"></span>
             <span v-if="a.percent" class="percent" v-text="a.percent"></span>
           </div>
-          <span
-            :class="{ bg: true, selected: mostVotes == a.votes }"
-            :style="{ width: a.percent }"
-          ></span>
+          <span :class="{ bg: true, selected: mostVotes == a.votes }" :style="{ width: a.percent }"></span>
         </template>
       </div>
     </div>
@@ -52,15 +53,8 @@
     ></div>
 
     <!-- 多选投票提交按钮 multiple-->
-    <template
-      v-if="!finalResults && !visibleResults && multiple && totalSelections > 0"
-    >
-      <a
-        href="#"
-        @click.prevent="handleMultiple"
-        class="submit"
-        v-text="submitButtonText"
-      ></a>
+    <template v-if="!finalResults && !visibleResults && multiple && totalSelections > 0">
+      <a href="#" @click.prevent="handleMultiple" class="submit" v-text="submitButtonText"></a>
     </template>
   </div>
 </template>
@@ -69,148 +63,147 @@
 import { defineComponent, PropType, reactive } from 'vue';
 import settingVue from '../../../../Vue3Admin/vue3-jd-h5/src/views/mine/setting.vue';
 export default defineComponent({
-  name: 'Poll',
-  props: {
-    question: {
-      type: String,
-      required: true
-    },
-    answers: {
-      type: Array,
-      required: true
-    },
-    showResults: {
-      type: Boolean,
-      default: false
-    },
-    showTotalVotes: {
-      type: Boolean,
-      default: true
-    },
-    finalResults: {
-      type: Boolean,
-      default: false
-    },
-    multiple: {
-      type: Boolean,
-      default: false
-    },
-    submitButtonText: {
-      type: String,
-      default: 'Submit'
-    },
-    customId: {
-      type: Number,
-      default: 0
-    }
-  },
-  data () {
-    return {
-      visibleResults: this.showResults
-    }
-  },
-  computed: {
-    totalVotes () {
-      let totalVotes = 0
-      this.answers.filter(a => {
-        if (!isNaN(a.votes) && a.votes > 0)
-          totalVotes += parseInt(a.votes)
-      })
-      return totalVotes
-    },//总票数
-    totalVotesFormatted () { // 所有投票的票数和
-      return this.totalVotes.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-    },
-    mostVotes () {
-      let max = 0
-      this.answers.filter(a => {
-        if (!isNaN(a.votes) && a.votes > 0 && a.votes >= max)
-          max = a.votes
-      })
-
-      return max
-    },//最大票数
-    calcAnswers () {
-   
-setTimeout(() => {
-
-
-  
-}, 1200);
-      if (this.totalVotes === 0)
-        return this.answers.map(a => {
-          a.percent = '0%'
-          return a
-        })
-
-      //Calculate percent
-      return this.answers.filter(a => {
-        if (!isNaN(a.votes) && a.votes > 0)
-          a.percent = (Math.round((parseInt(a.votes) / this.totalVotes) * 100)) + '%'
-        else
-          a.percent = '0%'
-
-        return a
-      })
-    },
-    totalSelections () {
-      return this.calcAnswers.filter(a => a.selected).length
-    }
-  },
-  methods: {
-    handleMultiple () {
-
-      let arSelected = []
-      this.calcAnswers.filter(a => {
-        if (a.selected) {
-          a.votes++
-          arSelected.push({ value: a.value, votes: a.votes })
+    name: 'Poll',
+    props: {
+        question: {
+            type: String,
+            required: true
+        },
+        answers: {
+            type: Array,
+            required: true
+        },
+        showResults: {
+            type: Boolean,
+            default: false
+        },
+        showTotalVotes: {
+            type: Boolean,
+            default: true
+        },
+        finalResults: {
+            type: Boolean,
+            default: false
+        },
+        multiple: {
+            type: Boolean,
+            default: false
+        },
+        submitButtonText: {
+            type: String,
+            default: 'Submit'
+        },
+        customId: {
+            type: Number,
+            default: 0
         }
-      })
-
-      this.visibleResults = true
-
-      let obj = { arSelected: arSelected, totalVotes: this.totalVotes }
-
-      if (this.customId)
-        obj.customId = this.customId
-
-      this.$emit('addvote', obj)
     },
-    handleVote (a) { //Callback
+    data () {
+        return {
+            visibleResults: this.showResults
+        }
+    },
+    computed: {
+        totalVotes () {
+            let totalVotes = 0
+            this.answers.filter(a => {
+                if (!isNaN(a.votes) && a.votes > 0)
+                    totalVotes += parseInt(a.votes)
+            })
+            return totalVotes
+        },//总票数
+        totalVotesFormatted () { // 所有投票的票数和
+            return this.totalVotes.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+        },
+        mostVotes () {
+            let max = 0
+            this.answers.filter(a => {
+                if (!isNaN(a.votes) && a.votes > 0 && a.votes >= max)
+                    max = a.votes
+            })
 
-      if (this.multiple) {
-        // 如果是多选项时候就走此逻辑
-        if (a.selected === undefined)
-          console.log("Please add 'selected: false' on the answer object")
+            return max
+        },//最大票数
+        calcAnswers () {
 
-        a.selected = !a.selected
-        return
-      }
+            setTimeout(() => {
 
-      a.votes++
-      a.selected = true
-      this.visibleResults = true
 
-      let obj = { value: a.value, votes: a.votes, totalVotes: this.totalVotes }
 
-      if (this.customId)
-        obj.customId = this.customId
+            }, 1200);
+            if (this.totalVotes === 0)
+                return this.answers.map(a => {
+                    a.percent = '0%'
+                    return a
+                })
 
-        console.log('niubic',this.visibleResults)
-      this.$emit('addvote', obj)
+            //Calculate percent
+            return this.answers.filter(a => {
+                if (!isNaN(a.votes) && a.votes > 0)
+                    a.percent = (Math.round((parseInt(a.votes) / this.totalVotes) * 100)) + '%'
+                else
+                    a.percent = '0%'
+
+                return a
+            })
+        },
+        totalSelections () {
+            return this.calcAnswers.filter(a => a.selected).length
+        }
+    },
+    methods: {
+        handleMultiple () {
+
+            let arSelected = []
+            this.calcAnswers.filter(a => {
+                if (a.selected) {
+                    a.votes++
+                    arSelected.push({ value: a.value, votes: a.votes })
+                }
+            })
+
+            this.visibleResults = true
+
+            let obj = { arSelected: arSelected, totalVotes: this.totalVotes }
+
+            if (this.customId)
+                obj.customId = this.customId
+
+            this.$emit('addvote', obj)
+        },
+        handleVote (a) { //Callback
+
+            if (this.multiple) {
+                // 如果是多选项时候就走此逻辑
+                if (a.selected === undefined)
+                    console.log("Please add 'selected: false' on the answer object")
+
+                a.selected = !a.selected
+                return
+            }
+
+            a.votes++
+            a.selected = true
+            this.visibleResults = true
+
+            let obj = { value: a.value, votes: a.votes, totalVotes: this.totalVotes }
+
+            if (this.customId)
+                obj.customId = this.customId
+
+            console.log('niubic', this.visibleResults)
+            this.$emit('addvote', obj)
+        }
     }
-  }
 })
 
 </script>
 
 <style>
-.duigou{
-    background:url('https://search-operate.cdn.bcebos.com/700580fdb772af2fdf30cfcbcadd7c5e.png')
+.duigou {
+  background: url('https://search-operate.cdn.bcebos.com/700580fdb772af2fdf30cfcbcadd7c5e.png');
 }
-.duigou2{
-    
+.duigou2 {
 }
 .vue-poll {
   font-family: 'Avenir', Helvetica, Arial, sans-serif;

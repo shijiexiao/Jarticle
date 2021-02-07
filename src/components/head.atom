@@ -1,0 +1,697 @@
+<template>
+    <c-aladdin
+        :class="D20Flag ? $style.timelineHeadCardDtwo : $style.timelineHeadCard"
+        :tplInfo="tplInfo"
+        hide-peak
+        hide-footer
+        hide-header
+    >
+        <!-- header 区域 包括 tips、倒计时、氛围底图、轮播 banner、头部标题 -->
+        <c-touchable-feedback
+            :url="url"
+            :url-params="urlParams"
+            :rl-highlight-position="bgPeak.topHeight ? bgPeak.topHeight + 'px,0,0,0' : '0, 0, 0, 0'"
+            :style="isPeak ? 'margin-top:' + -bgPeak.topHeight + 'px' : ''"
+            :class="{[$style.dtwoContainer]: D20Flag}"
+            rl-highlight-color="rgba(255, 255, 255, 0)"
+        >
+            <div
+                :style="isPeak ? bgPeak.gradualUp : ''"
+            >
+                <!-- 头部组件渐变区 -->
+                <div a-if="isFeature || isTheme" :style="bgPeak.gradualMiddle">
+
+                    <!-- 头部tips -->
+                    <c-touchable-feedback
+                        a-if="headTips && headTips.text"
+                        :rl-highlight-color="headTips.link ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0)'"
+                    >
+                        <c-link
+                            :url="headTips.link"
+                            :params="headTips.linkParams"
+                            :data-module="modulePrefix + '-tips_' + (is_group ? group_id : tplInfo.srcid)"
+                            class="timeline-head-tips"
+                            @click="headTips.addLog ? clickLink($event, headTips, true) : null"
+                        >
+                            <div class="tips-desc">{{ headTips.text }}</div>
+                            <i
+                                a-if="headTips.link || headTips.scheme"
+                                class="c-icon tips-icon c-gap-inner-left"
+                            >&#xe734</i>
+                        </c-link>
+                    </c-touchable-feedback>
+
+                    <!-- 倒计时，大标题，氛围底图 -->
+                    <rel-countdown
+                        a-if="showCountDown"
+                        :head-title="headTitle"
+                        :head-countdown="headCountdown"
+                        :bg-peak="bgPeak"
+                        :head-tips="headTips"
+                        :tpl-info="tplInfo"
+                        :d-flag="D20Flag"
+                        :logo-conf="logoConf"
+                    />
+                    <div
+                        a-if="(bgPeak && bgPeak.gradualBottom && bgPeak.gradualMiddle) || isFeature"
+                        :class="D20Flag ? $style.timelineGradualFillDtwo : $style.timelineGradualFill"
+                    ></div>
+                </div>
+
+                <!-- 子卡功能区 -->
+                <rel-dynamic
+                    a-if="isFeature"
+                    :rel-img="rel_img"
+                    :rel-title="rel_title"
+                    :rel-desc="rel_desc"
+                    :group-id="group_id"
+                    :module-prefix="modulePrefix"
+                    :dynamic-list="dynamicList"
+                    :current-tab-index="currentTabIndex"
+                    :tpl-info="tplInfo"
+                    :d-flag="D20Flag"
+                    :add-params="addParams"
+                    :province-name="province_name"
+                    :city-name="city_name"
+                    :style="bgPeak.gradualBottom"
+                />
+
+                <!-- 轮播banner区域 -->
+                <div
+                    a-if="isBanner"
+                    :style="bgPeak.gradualBottom"
+                    :class="[!isTheme ? $style.timelineBannerNormal : '',
+                             D20Flag ? $style.timelineBannerDtwo : $style.timelineBanner]"
+                >
+                    <c-carousel-frame
+                        ref="carouselFrame"
+                        :show-indicator="isBanner && bannerListData.length > 1"
+                        :dot-indicator-opt="{
+                            color: '#c8c8c8',
+                            selectedColor: '#fff',
+                            paddingBottom: '-.04rem'
+                        }"
+                        :loop="bannerListData && bannerListData.length > 1"
+                        :autoplay="false"
+                        class="c-row-tile timeline-head-carousel"
+                        @change="handleIndexChange"
+                    >
+                        <div a-for="(item, index) in bannerListData" :key="index">
+                            <top-header
+                                :ref="'carouseFrameItem' + index"
+                                :big-img="item.bigImg"
+                                :tpl-info="tplInfo"
+                                :is-theme="isTheme"
+                                :srcid="tplInfo.srcid"
+                                :type="+item.type"
+                                :type-text="item.liveText"
+                                :label="item.label"
+                                :video-media="item.videoMedia"
+                                :use-video-player="item.useVideoPlayer"
+                                :video-duration="item.videoDuration"
+                                :video-info="item.videoInfo"
+                                :resource-type="item.resource_type"
+                                :add-vd-cyc="item.addVdCyc"
+                                :img-size-type="imgSizeType"
+                                :d-flag="D20Flag"
+                                :custom-style="item.resource_type === 'live' && +item.mediaType === 0 ? videoVerticalStyle : videoPlayerStyle"
+                                :info="item.info_show === '1' ? item.info || '' : ''"
+                                :data-module="modulePrefix + '-ban' + (index+1) + '_' + (is_group ? group_id : tplInfo.srcid)"
+                                :is-single-banner="isSingleBanner"
+                                :is-loop-banner="bannerListData && bannerListData.length > 1"
+                                :show-index="index"
+                                :current-index="currentIndex"
+                                :media-type="item.mediaType"
+                                :banner-length="bannerLength"
+                                @headClick="item.addLog ? clickLink($event, item, true): null"
+                                @goNextBanner="goNextBanner"
+                            />
+                        </div>
+                    </c-carousel-frame>
+                </div>
+
+
+                <!-- 头图区域 -->
+                <div
+                    a-if="!isFeature && !isBanner"
+                    :style="bgPeak.gradualBottom"
+                    :class="D20Flag
+                        ? $style.timelineHeadPositionDtwo
+                        : (bgPeak && bgPeak.gradualBottom && bgPeak.gradualMiddle
+                    ? $style.timelineHeadPositionPeak : $style.timelineHeadPosition)"
+                >
+                    <top-header
+                        :big-img="bigImg"
+                        :tpl-info="tplInfo"
+                        :is-theme="isTheme"
+                        :srcid="tplInfo.srcid"
+                        :type="+type"
+                        :type-text="type_text"
+                        :title="title"
+                        :news-url="url"
+                        :news-params="urlParams"
+                        :resource-type="resource_type"
+                        :add-vd-cyc="addVdCyc"
+                        :label="label"
+                        :video-media="videoMedia"
+                        :use-video-player="useVideoPlayer"
+                        :video-duration="videoDuration"
+                        :video-info="videoInfo"
+                        :img-size-type="imgSizeType"
+                        :d-flag="D20Flag"
+                        :custom-style="resource_type === 'live' && +mediaType === 0 ? videoVerticalStyle : videoPlayerStyle"
+                        :data-module="modulePrefix + '-tp1_' + (is_group ? group_id : tplInfo.srcid)"
+                        :is-single-banner="isSingleBanner"
+                        :media-type="mediaType"
+                        @headClick="logObj.addLog ? clickLink($event,logObj, false): null"
+                    />
+                    <c-touchable-feedback>
+                        <prize-icon
+                            :vote="voteData"
+                            :vote-url="voteUrl"
+                            :is-group="is_group"
+                            :group-id="group_id"
+                            :module-prefix="modulePrefix"
+                            class="prize-icon"
+                        />
+                    </c-touchable-feedback>
+                </div>
+            </div>
+        </c-touchable-feedback>
+        <!-- banner样式填充下间距 -->
+        <div
+            a-if="!isSingleBanner && (isBanner || isFeature)"
+            :style="{
+                background: bannerFillBgColor,
+                height: isFeature && D20Flag ? '.10rem' : '.20rem',
+            }"
+            class="timeline-banner-fill"
+        ></div>
+
+        <!-- center区域，包括文本和按钮 -->
+        <div
+            :class="D20Flag ? $style.timelineHeadContentDtwo : $style.timelineHeadContent"
+            :style="{
+                'border-bottom-left-radius': D20Flag ? '.18rem' : '0',
+                'border-bottom-right-radius': D20Flag ? '.18rem' : '0'
+            }"
+            @click="logObj.addLog ? clickLink($event, logObj, false) : null"
+        >
+            <c-touchable-feedback
+                :url="url"
+                :url-params="urlParams"
+                :left="D20Flag ? '-.13' : '-.17'"
+                :right="D20Flag ? '-.13' : '-.17'"
+                :rl-highlight-radius="D20Flag && isFeature ? '.18rem .18rem 0 0' : '0 0 0 0'"
+                is-jump
+            >
+                <div
+                    a-if="!isFeature && !isBanner"
+                    :data-module="resource_type === 'video' || addVdCyc ? 'vd-cyc' : ''"
+                >
+                    <!-- 标题 -->
+                    <div
+                        :class="[$style.timelineHeadTitle,
+                                 D20Flag ? $style.timelineHeadTitleDtwoPadding : '',
+                                 'c-gap-inner-top-large', 'c-gap-inner-bottom-small'
+                        ]"
+                    >
+                        <!-- 标题前图片、不用subtitle组件是因为右侧三角icon无法去掉 -->
+                        <div
+                            a-if="tplInfo && tplInfo.theme && tplInfo.theme.iconUrl"
+                            :style="{
+                                backgroundImage: tplInfo && tplInfo.theme && tplInfo.theme.iconUrl
+                                    ? 'url(' + tplInfo.theme.iconUrl + ')'
+                                    : '',
+                                width: tplInfo && tplInfo.theme && tplInfo.theme.iconWidth
+                                    ? tplInfo.theme.iconWidth
+                                    : '',
+                                height: tplInfo && tplInfo.theme && tplInfo.theme.iconHeight
+                                    ? tplInfo.theme.iconHeight
+                                    : '',
+                                marginBottom: D20Flag ? '.045rem' : '0'
+                            }"
+                            class="title-img c-gap-right-small"
+                        />
+                        <c-title
+                            :url="titleUrl"
+                            :url-params="titleParams"
+                            :text="title"
+                            :tpl-info="tplInfo"
+                            :color="tplInfo.theme ? tplInfo.theme.titleColor : ''"
+                            :data-module="modulePrefix + '-tt1_' + (is_group ? group_id : tplInfo.srcid)"
+                            clamp="1"
+                            font-weight="700"
+                            class="c-line-clamp1 title-text"
+                            @click="logObj.addLog ? clickLink($event, logObj, false) : null"
+                        />
+                    </div>
+                    <!-- 文本描述,站点来源 -->
+                    <div
+                        :data-module="modulePrefix + '-tc1_' + (is_group ? group_id : tplInfo.srcid)"
+                        class="c-line-clamp3"
+                    >
+                        {{ abstract }}
+                    </div>
+                    <c-source
+                        a-if="!is_topic && time && source"
+                        :img-src="imgSrc"
+                        :source="source"
+                        :time="time"
+                        :color="D20Flag ? '#858585' : ''"
+                        :data-module="modulePrefix + '-ts1_' + (is_group ? group_id : tplInfo.srcid)"
+                        class="timeline-source"
+                    />
+                </div>
+
+                <!-- 子卡新闻区 -->
+                <rel-news
+                    a-if="isFeature"
+                    :big-img="bigImg"
+                    :title-url="titleUrl"
+                    :title-params="titleParams"
+                    :title="title"
+                    :is-group="is_group"
+                    :group-id="group_id"
+                    :news-title="news_title"
+                    :module-prefix="modulePrefix"
+                    :tpl-info="tplInfo"
+                    :abstract="abstract"
+                    :type="type"
+                    :type-text="type_text"
+                    :add-vd-cyc="addVdCyc"
+                    :img-size-type="imgSizeType"
+                    :d-flag="D20Flag"
+                    :data-module="resource_type === 'video' || addVdCyc ? 'vd-cyc' : ''"
+                />
+
+
+                <!-- 底部按钮 -->
+                <div a-if="!isBanner">
+                    <div
+                        a-if="buttons_couple && buttons_couple.length <= 3 && buttons_couple.length >= 1"
+                        :class="D20Flag ? $style.timelineHeadButtonsDtwo : $style.timelineHeadButtonsCouple"
+                    >
+                        <c-row>
+                            <c-span
+                                a-for="(item, index) in buttons_couple"
+                                :key="index"
+                                :data-module="item.resource_type === 'video' ? 'vd-cyc' : ''"
+                            >
+                                <c-slink
+                                    ref="button"
+                                    :data-module="modulePrefix + '-tb' + (index + 1) + '_' + (is_group ? group_id : tplInfo.srcid)"
+                                    :url="item.link"
+                                    :params="item.linkParams"
+                                    :text="item.name"
+                                    type="strong"
+                                    class="timeline-head-slink"
+                                    @click="item.addLog ? clickLink($event, item, true) : null"
+                                />
+                            </c-span>
+                        </c-row>
+                    </div>
+                    <div
+                        a-else-if="buttons_couple && buttons_couple.length === 4"
+                        :class="D20Flag ? $style.timelineHeadButtonsDtwo : $style.timelineHeadButtonsCoupleGroup"
+                    >
+                        <c-row class="c-gap-bottom">
+                            <c-span
+                                a-for="(item, index) in buttons_couple_a"
+                                :key="index"
+                                :data-module="item.resource_type === 'video' ? 'vd-cyc' : ''"
+                            >
+                                <c-slink
+                                    ref="button"
+                                    :data-module="modulePrefix + '-tb' + (index + 1) + '_' + (is_group ? group_id : tplInfo.srcid)"
+                                    :url="item.link"
+                                    :params="item.linkParams"
+                                    :text="item.name"
+                                    class="timeline-head-slink"
+                                    type="strong"
+                                    @click="item.addLog ? clickLink($event, item, true) : null"
+                                />
+                            </c-span>
+                        </c-row>
+                        <c-row>
+                            <c-span
+                                a-for="(item, index) in buttons_couple_b"
+                                :key="index"
+                                :data-module="item.resource_type === 'video' ? 'vd-cyc' : ''"
+                            >
+                                <c-slink
+                                    ref="button"
+                                    :data-module="modulePrefix + '-tb' + (index + 1) + '_' + (is_group ? group_id : tplInfo.srcid)"
+                                    :url="item.link"
+                                    :params="item.linkParams"
+                                    :text="item.name"
+                                    class="timeline-head-slink"
+                                    type="strong"
+                                    @click="item.addLog ? clickLink($event, item, true) : null"
+                                />
+                            </c-span>
+                        </c-row>
+                    </div>
+                    <div
+                        a-else
+                        :data-module="resource_type === 'video' || addVdCyc ? 'vd-cyc' : ''"
+                        :class="isTheme && !(!is_topic && time && source) && !isFeature
+                        ? 'c-gap-inner-bottom' : 'c-gap-inner-bottom-large'"
+                    >
+                    </div>
+                </div>
+            </c-touchable-feedback>
+        </div>
+
+        <!-- 热点金刚位 -->
+        <rel-tag
+            a-if="showTag"
+            :list="tagList"
+            :tag-style="tagStyle"
+            :tpl-info="tplInfo"
+        />
+    </c-aladdin>
+</template>
+
+<script type="config">
+{
+    props: [
+        'url',
+        'urlParams',
+        'tplInfo',
+        'bigImg',
+        'title',
+        'titleUrl',
+        'titleParams',
+        'abstract',
+        'imgSrc',
+        'source',
+        'time',
+        'voteData',
+        'voteUrl',
+        'buttons_couple',
+        'buttons_couple_a',
+        'buttons_couple_b',
+        'event_status',
+        'type',
+        'type_text',
+        'modulePrefix',
+        'is_topic',
+        'is_group',
+        'group_id',
+        'headColor',
+        'headTextColor',
+        'logObj',
+        'isFeature',
+        'rel_title',
+        'rel_desc',
+        'rel_img',
+        'news_title',
+        'resource_type',
+        'addVdCyc',
+        'dynamicList',
+        'currentTabIndex',
+        'tagList',
+        'tagStyle',
+        'headTips',
+        'headCountdown',
+        'headTitle',
+        'isPeak',
+        'bgPeak',
+        'label',
+        'bannerListData',
+        'isBanner',
+        'isTheme',
+        'useVideoPlayer',
+        'videoMedia',
+        'videoDuration',
+        'videoInfo',
+        'imgSizeType',
+        'D20Flag',
+        'logoConf',
+        'isSingleBanner',
+        'mediaType',
+        'addParams',
+        'province_name',
+        'city_name'
+    ],
+    data: {
+        blessNum: 0,
+        btnLength: 0,
+        videoPlayerStyle: isSingleBanner ? {
+            'border-top-left-radius': '.18rem',
+            'border-top-right-radius': '.18rem',
+            'border-bottom-left-radius': '.18rem',
+            'border-bottom-right-radius': '.18rem',
+            'height': 'auto'
+        } : {
+            'border-top-left-radius': '.18rem',
+            'border-top-right-radius': '.18rem'
+        },
+        videoVerticalStyle: {
+            'position': 'absolute',
+            'top': '50%',
+            'left': 'auto',
+            'right': '2%',
+            'width': '29.31%',
+            'height': '92.5%',
+            'transform': 'translateY(-50%)',
+            'border': '1px solid rgba(255,255,255,0.80)',
+            'border-radius': '.09rem',
+            'overflow': 'hidden'
+        },
+        showTag: tagList && tagList.length >= 4,
+        showCountDown: headTitle || (headCountdown && headCountdown.counting),
+        currentIndex: 0,
+        bannerNextFlag: null,
+        bannerLength: bannerListData ? bannerListData.length : 0
+    },
+    components: {
+        'c-aladdin': 'search-ui/Aladdin/Aladdin',
+        'c-touchable-feedback': 'search-ui/TouchableFeedback/TouchableFeedback',
+        'c-title': 'search-ui/Title/Title',
+        'c-span': 'search-ui/Row/Span',
+        'c-row': 'search-ui/Row/Row',
+        'c-slink': 'search-ui/Slink/Slink',
+        'c-source': 'search-ui/Source/Source',
+        'c-link': 'search-ui/Link/Link',
+        'c-carousel-frame': 'search-ui/Carousel/CarouselFrame',
+        'rel-tag': '/app-component/rel-common/rel-tag',
+        'prize-icon': './rel-common-prize',
+        'top-header': './rel-full-coverage-header',
+        'rel-news': './rel-news',
+        'rel-dynamic': './rel-dynamic',
+        'rel-countdown': './rel-countdown'
+    }
+}
+</script>
+<script>
+import invokeMixin from 'static/app/rel_common/invoke-mixin';
+
+const NEXT_BANNER_PROTECT = 3000;
+export default {
+    mixins: [invokeMixin],
+    mounted() {
+        this.btnLength = this.buttons_couple.length;
+        this.bannerNextFlag = Date.now();
+    },
+    methods: {
+        /**
+         * 切换下一张 banner
+         */
+        goNextBanner(idx) {
+
+            // 防止多次 next
+            if (Date.now() - this.bannerNextFlag < NEXT_BANNER_PROTECT) {
+                return;
+            }
+            this.bannerNextFlag = Date.now();
+            this.$refs.carouselFrame.next();
+        },
+        /**
+         * banner change 处理
+         */
+        handleIndexChange(obj) {
+            this.currentIndex = obj.current;
+        }
+    },
+    computed: {
+        bannerFillBgColor() {
+            const hasThemeBgColor = this.tplInfo && this.tplInfo.theme
+                                    && this.tplInfo.theme.theme && this.tplInfo.theme.bgColor;
+            const isDarkMode = this.tplInfo && this.tplInfo.multimode && this.tplInfo.multimode.darkmode;
+
+            if (hasThemeBgColor) {
+                return 'transparent';
+            }
+            if (isDarkMode) {
+                if (this.dynamicList && this.dynamicList.length > 0) {
+                    return '#080808';
+                }
+                return '#161616';
+            }
+            if (this.isFeature) {
+                return '#f5f5f5';
+            }
+
+            return '#fff';
+
+        }
+    }
+};
+</script>
+
+<style lang="less" module>
+.dtwo-container {
+    margin-left: -.08rem;
+    margin-right: -.08rem;
+}
+.timeline-gradual-fill {
+    height: .20rem;
+}
+.timeline-gradual-fill-dtwo {
+    height: .18rem;
+}
+.timeline-banner-fill {
+    height: .20rem;
+}
+.timeline-banner {
+    padding-left: .34rem;
+    padding-right: .34rem;
+}
+.timeline-banner-dtwo {
+    padding-left: .21rem;
+    padding-right: .21rem;
+}
+.timeline-banner-normal {
+    padding-top: .20rem;
+}
+.timeline-head-tips {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 .17rem;
+    background-color: rgba(255, 255, 255, .15);
+}
+.timeline-head-tips .tips-desc {
+    font-size: .14rem;
+    line-height: .34rem;
+    color: rgba(255, 255, 255, .8);
+}
+.timeline-head-tips .tips-icon {
+    text-align: right;
+    font-size: .16rem;
+    color: rgba(255, 255, 255, .8);
+}
+.timeline-head-position {
+    padding: .20rem .17rem  0 .17rem;
+}
+.timeline-head-position-peak {
+    padding: 0 .17rem;
+}
+.timeline-head-position-dtwo {
+    padding: 0 .08rem;
+}
+.timeline-head-card {
+    border-radius: 0;
+    position: relative;
+    padding: 0 !important;
+}
+.timeline-head-card-dtwo {
+    position: relative;
+    border-top-left-radius: .18rem;
+    border-top-right-radius: .18rem;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    padding: 0 !important;
+    border-radius: .18rem;
+}
+.timeline-head-content {
+    padding: 0 .17rem;
+}
+.timeline-head-content-dtwo {
+    padding: 0 .13rem;
+    background: #fff;
+}
+:global(.c-darkmode) .timeline-head-content-dtwo {
+    background: #161616;
+}
+.timeline-head-topic {
+    position: absolute;
+    margin-top: .02rem;
+    text-align: center;
+}
+.timeline-head-topic .topic-label {
+    width: .32rem;
+    height: .19rem;
+    font-size: .12rem;
+    line-height: .19rem;
+}
+article .c-container header {
+    margin-bottom: 0;
+}
+.full-coverage-header {
+    position: relative;
+}
+.prize-icon {
+    position: absolute;
+    bottom: .01rem;
+    right: .05rem;
+}
+.titleColor {
+    color: #000;
+}
+.timeline-source {
+    padding-top: .01rem;
+}
+.timeline-source .c-source .link-touchable .c-source-img-wrapper {
+    width: .18rem;
+    height: .18rem;
+}
+.timeline-head-slink {
+    margin: 0;
+}
+.timeline-head-title-group {
+    margin-left: .48rem;
+}
+.timeline-head-buttons-couple {
+    padding: .1rem 0 .2rem 0;
+}
+.timeline-head-buttons-couple-group {
+    padding: .1rem 0 .2rem 0;
+}
+.timeline-head-buttons-dtwo {
+    padding: .1rem 0 .20rem 0;
+}
+.timeline-head-title {
+    display: flex;
+    align-items: center;
+    .title-img {
+        display: inline-block;
+        position: relative;
+        vertical-align: middle;
+        background-size: cover;
+        background-repeat: no-repeat;
+        background-position: center;
+        max-height: 29px;
+    }
+    .title-text {
+        flex: 1;
+    }
+}
+.timeline-head-title-dtwo-padding {
+    padding-top: .16rem;
+    padding-bottom: .03rem;
+}
+.peak-layer {
+    position: absolute;
+    top: 0;
+    left: -.1rem;
+    right: -.1rem;
+    height: 100%;
+}
+.timeline-head-carousel {
+    border-top-left-radius: .18rem;
+    border-top-right-radius: .18rem;
+}
+</style>

@@ -1,0 +1,853 @@
+/**
+ * @file 卡片数据处理
+ * @author
+ */
+
+import {
+    Atom_Wise_Utils as Util,
+    UrlParams,
+    numberic
+} from '@baidu/vui-utils';
+import 'ts2php/types/php';
+import {
+    UrlInfo,
+    ReqData,
+    NewTplData,
+    RelPageData,
+    CommonItem,
+    BgPeak,
+    TplInfoData,
+    TplData
+} from './../../app-component/rel-common/interface';
+import {
+    supportBjhNa,
+    formatDuration,
+    makeXcxScheme,
+    formatTimeDown,
+    hex2rgb
+} from '../../app-component/rel-common/dataModifier';
+import processDynamicData from './dynamicDataModifier';
+import processLiveData from './liveDataModifier';
+import {
+    handleXcxRedirect,
+    handleDspNaRedirect,
+    handleLiveNaRedirect,
+    buildTiebaRoomSchema
+} from './linkDataModifier';
+
+function supportLiveNaWiseInvoke(item: CommonItem) {
+    return item && item.baidulive_param && item.baidulive_param.id;
+}
+
+function supportXcxWiseInvoke(item: CommonItem) {
+    return item && item.xcx_params && item.xcx_params.xcx_appkey;
+}
+
+function supportH5WiseInvoke(item: CommonItem) {
+    return item && item.h5_params && item.h5_params.url_app && item.h5_params.url;
+}
+
+function makeSearchScheme(link: string) {
+    return `baiduboxapp://v1/browser/open?upgrade=1&url=${encodeURIComponent(link)}&opennewwindow=1&append=0`;
+}
+
+/**
+ * 端外调起手百处理
+ *
+ * @param item
+ */
+function invokeBoxHandle(item: CommonItem): CommonItem {
+    const reqData = Util.getTemplateVars('reqData') as ReqData;
+    const tplInfo = Util.getTplInfo() as TplInfoData;
+    const newItem = item;
+
+    // 默认端外支持调起手百
+    let supportWiseInvoke = true;
+    if (supportXcxWiseInvoke(item)) {
+        newItem.invokeScheme = makeXcxScheme(newItem.xcx_params);
+        newItem.invokeFailUrl = newItem.url_app_degrade;
+    }
+    else if (supportLiveNaWiseInvoke(item)) {
+        newItem.invokeScheme = handleLiveNaRedirect(newItem, tplInfo, reqData, false);
+        newItem.invokeFailUrl = newItem.originUrl;
+    }
+    else if (supportH5WiseInvoke(item)) {
+        const appLink = newItem.h5_params.url_app;
+        if (appLink.indexOf('targetpage=entertiebaroom') > -1) {
+            item.link = appLink;
+
+            // 秀场直播暂时调起逻辑，秀场直播用的 h5 类型调起手百，并打开 na 页
+            newItem.invokeScheme = buildTiebaRoomSchema(item, tplInfo, reqData, false);
+        }
+        else {
+            newItem.invokeScheme = makeSearchScheme(appLink);
+        }
+        newItem.invokeFailUrl = newItem.originUrl;
+    }
+    else {
+        supportWiseInvoke = false;
+    }
+
+    // addLog：是否拦截点击事件
+    // openBOx：是否符合调起类型
+    if (supportWiseInvoke) {
+        newItem.addLog = true;
+        newItem.openBox = true;
+    }
+
+    return newItem;
+}
+
+/* eslint-disable-next-line */
+export function process(originTplData: TplData) {
+    const tplData = processLiveData(originTplData);
+    const {
+        title,
+        abstract,
+        bigImg,
+        buttons_couple,
+        jumpUrl,
+        source,
+        time,
+        voteData,
+        type,
+        loadMore,
+        is_topic,
+        headColor,
+        url_trans_feature,
+        degrade_url,
+        url_xcx_params,
+        headTextColor,
+        baiduvideo_param,
+        na_invoke_type,
+        baidulive_param,
+        rel_news_title,
+        rel_dynamic,
+        rel_dynamic_list,
+        resource_type,
+        tagList,
+        videoLive,
+        tagStyle,
+        type_text,
+        headTips,
+        headCountdown,
+        bannerList,
+        videoMedia,
+        useVideoPlayer,
+        videoDuration,
+        sourceOptions,
+        isNewImgSize,
+        isLiveNaStatusUpdated,
+        live_status,
+        live_type,
+        live_room_id,
+        h5_params,
+        link,
+        logoConf,
+        mediaType
+    } = tplData;
+    let {
+        rel_title,
+        imgSrc,
+        rel_img,
+        rel_desc,
+        url,
+        headTitle
+    } = tplData;
+
+    // 后端字段统一为 link
+    if (link) {
+        url = link;
+    }
+    console.dir(url_trans_feature)
+
+    // 原始 url，调起降级使用
+    const originUrl = url;
+
+    const voteUrl = Util.httpsHost({ url: 'http://vote.baidu.com/pae/component/api/vote' });
+    const sfOptions = '{"view":{"_hold":2}}';
+    const modulePrefix = 'qmbd';
+    const pageData = Util.getTemplateVars('pageData') as RelPageData;
+    const reqData = Util.getTemplateVars('reqData') as ReqData;
+    const tplInfo = Util.getTplInfo() as TplInfoData;
+    const { is_group, group_id } = tplInfo;
+
+    // 是否端内及版本信息,lite对齐主线后特殊逻辑需要对lite单独适配 http://wiki.baidu.com/pages/viewpage.action?pageId=1120490321
+    const { isbaiduboxapp, isAndroid, bd_version } = pageData.baiduboxapp;
+    const isBaiduBoxLite = Util.getUserAgentInfo('isBaiduBoxLite');
+    const isBaiduBox = Util.getUserAgentInfo('isBaiduBox');
+    const isDarkMode = Util.getUserAgentInfo('isDarkMode');
+
+    const D20Flag = true;
+
+    // 功能样式、数据处理
+    const isFeature = is_topic === 3;
+    if (rel_title) {
+        rel_title = rel_title.substring(0, 9);
+        headTitle = headTitle || {};
+        headTitle.title = rel_title;
+    }
+    if (rel_desc) {
+        rel_desc = rel_desc.substring(0, 15);
+        headTitle = headTitle || {};
+        headTitle.subTitle = rel_desc;
+    }
+    if (rel_img) {
+        rel_img = Util.httpsHost({ url: rel_img });
+        tplInfo.theme = Object.assign({}, tplInfo.theme, { bgImg: rel_img });
+    }
+    const { dynamicList, currentTabIndex } = processDynamicData(rel_dynamic, rel_dynamic_list);
+
+    // banner样式
+    const isBanner = is_topic === 4 && bannerList && bannerList.length >= 1;
+
+    // label处理
+    const label = {
+        type: is_topic,
+        textColor: headTextColor,
+        bgColor: headColor
+    };
+
+    // 图片处理, 平台裁剪，非功能样式16：9， 功能样式3:2, 来源图片处理
+    if (bigImg && bigImg.src) {
+        bigImg.src = Util.httpsHost({ url: bigImg.src });
+    }
+    if (imgSrc) {
+        imgSrc = Util.makeTimgLink({ imgsrc: imgSrc });
+    };
+
+    // 按钮、金刚位、banner处理...后续把跳转处理逻辑抽出来
+    const handleCommonItemRedirect = function (data: CommonItem[]): CommonItem[] {
+        const formatData = [] as object[];
+        if (Array.isArray(data) && data.length >= 1) {
+            for (const item of data) {
+                if (item && item.link) {
+                    const itemQueryParams: {
+                        word?: string;
+                        sa?: string;
+                        topic_id?: numberic;
+                    } = {};
+                    const urlInfo = parse_url(item.link) as UrlInfo;
+                    const path = urlInfo.path;
+                    parse_str(urlInfo.query, itemQueryParams);
+                    const itemWord = itemQueryParams.word || '';
+                    const itemSa = itemQueryParams.sa || '';
+                    const topicId = itemQueryParams.topic_id || '';
+                    let newItem = item;
+
+                    // 11.13以上走a标签打开na落地页，否则js调起，补发日志
+                    const isNew = version_compare(bd_version, '11.13') !== -1;
+
+                    // 11.7以上支持短视频na
+                    const supportNa = version_compare(bd_version, '11.7') !== -1;
+
+                    // 短视频na判断标志
+                    const na_invoke_type_btn = newItem.na_invoke_type ? parseInt(newItem.na_invoke_type, 10) : 0;
+                    const jumpFlag = na_invoke_type_btn === 1 || na_invoke_type_btn === 3;
+
+                    // 添加视频极速页来源区分字段,详见 http://wiki.baidu.com/pages/viewpage.action?pageId=1037287057
+                    if (newItem.resource_type === 'video') {
+                        newItem.link = `${newItem.link}&fr0=A&fr1=A`;
+                    }
+
+                    // 原始 url
+                    newItem.originUrl = newItem.link;
+
+                    // 小程序调起
+                    if (
+                        isbaiduboxapp
+                        && newItem.xcx_params
+                        && newItem.url_app_degrade
+                        && url_trans_feature
+                    ) {
+
+                        // eslint-disable-next-line
+                        newItem.linkParams = handleXcxRedirect(newItem.link, newItem.url_app_degrade, newItem.xcx_params, tplData);
+                        newItem.link = newItem.linkParams.tcUrl;
+                    }
+
+                    // 短视频na
+                    else if (
+                        isbaiduboxapp
+                        && newItem.baiduvideo_param
+                        && jumpFlag
+                        && supportNa
+                    ) {
+                        newItem.action = 'invokeNaLp';
+                        newItem.addLog = true;
+                        newItem.isNa = true;
+                        newItem.isNew = isNew;
+                        newItem.degrade_url = newItem.link;
+                        newItem.link = handleDspNaRedirect(newItem, isAndroid, tplInfo, reqData, isNew);
+                        newItem.scheme = newItem.link;
+                        const { vid, pageUrl } = newItem.baiduvideo_param?.videoInfo || {};
+                        newItem.videoInfo = {
+                            vid,
+                            pageUrl
+                        };
+                        if (!isNew) {
+                            newItem.link = '';
+                        }
+                    }
+
+                    // 百家号直播na
+                    else if (
+                        isbaiduboxapp
+                        && !isBaiduBoxLite
+                        && newItem.baidulive_param
+                    ) {
+                        newItem.action = 'invoke_live_na';
+                        newItem.addLog = true;
+                        newItem.isNew = isNew;
+                        newItem.isLiveNa = true;
+                        newItem.degrade_url = newItem.link;
+                        newItem.link = handleLiveNaRedirect(newItem, tplInfo, reqData, isNew);
+                        newItem.scheme = newItem.link;
+                        if (!isNew) {
+                            newItem.link = '';
+                        }
+                    }
+
+                    // 百家号轻浏览
+                    else if (
+                        item.bjh_na
+                        && item.bjh_na.easyBrowse === 1
+                        && item.bjh_na.easyBrowseConfirm === 1
+                        && item.bjh_na.nid
+                        && item.bjh_na.thread_id
+                        && supportBjhNa()
+                    ) {
+                        const easyBrowseUrlPrefix = 'https://mbd.baidu.com/newspage/data/landingreact?pageType=2&nid=news_';
+                        newItem.easyBrowseUrl = `${easyBrowseUrlPrefix}${item.bjh_na.nid}&sourceFrom=search`;
+                        newItem.easybrowse = {
+                            type: 'bjh',
+                            data: {
+                                ...item.bjh_na,
+                                url: newItem.easyBrowseUrl
+                            }
+                        };
+                        newItem.linkParams = Util.makeTcLink(newItem.easyBrowseUrl, {
+                            easybrowse: newItem.easybrowse
+                        });
+                        newItem.link = newItem.linkParams.tcUrl;
+                    }
+
+                    // 秀场贴吧直播 na
+                    else if (
+                        newItem.link.indexOf('targetpage=entertiebaroom') > -1
+                        && !isBaiduBoxLite
+                        && isbaiduboxapp
+                        && version_compare(bd_version, '11.16.5') > -1
+                    ) {
+
+                        // 给前端解析参数使用的
+                        newItem.isTiebaRoomNa = true;
+                        newItem.scheme = buildTiebaRoomSchema(newItem, tplInfo, reqData);
+                        newItem.link = newItem.scheme;
+                        newItem.addLog = true;
+                    }
+
+                    // sf跳转
+                    else if (path && path.endsWith('/sf')) {
+                        newItem.linkParams = Util.makeSfLink(newItem.link, {
+                            options: sfOptions,
+                            cyc: '1',
+                            undecode: '1'
+                        });
+                        newItem.link = newItem.linkParams.tcUrl;
+                    }
+
+                    // 话题搜索
+                    // eslint-disable-next-line max-len
+                    else if (itemWord && itemWord.startsWith('#') && itemWord.endsWith('#') && itemSa === 'hts_kg_hot') {
+                        const topicLink = Util.makeSearchLink({
+                            'wd': itemWord,
+                            'sa': itemSa
+                        }) + (topicId ? `&topic_id=${topicId}` : '');
+                        newItem.linkParams = Util.makeTcLink(topicLink, {
+                            'undecode': 1
+                        });
+                        newItem.link = newItem.linkParams.tcUrl;
+                    }
+
+                    // 普通h5跳
+                    else {
+                        newItem.linkParams = Util.makeTcLink(newItem.link);
+                        newItem.link = newItem.linkParams.tcUrl;
+                        if (newItem.live_room_id) {
+                            newItem.linkParams.clickData = JSON.stringify({
+                                clk_info: {
+                                    live_room_id: newItem.live_room_id
+                                }
+                            });
+                        }
+                    }
+
+                    // 金刚位icon处理
+                    if (newItem.icon) {
+                        newItem.icon = Util.httpsHost({ url: newItem.icon });
+                    }
+
+                    // banner图
+                    if (newItem.imgSrc) {
+                        newItem.imgSrc = Util.httpsHost({ url: newItem.imgSrc });
+                        newItem.bigImg = {
+                            src: newItem.imgSrc,
+                            url: newItem.link,
+                            params: newItem.linkParams
+                        };
+                    }
+
+                    // banner标签处理
+                    if (newItem.headColor && newItem.headTextColor) {
+                        newItem.label = {
+                            type: +newItem.banStyle,
+                            textColor: newItem.headTextColor,
+                            bgColor: newItem.headColor
+                        };
+                    }
+
+                    // banner视频三角判断
+                    newItem.addVdCyc = false;
+                    // eslint-disable-next-line max-len
+                    if (+newItem.type === 1 || (+newItem.type === 3 && !(newItem.liveText === '直播预告' && +newItem.videoLive === 0))) {
+                        newItem.addVdCyc = true;
+                    }
+
+                    if (newItem.videoDuration) {
+                        newItem.videoDuration = formatDuration(newItem.videoDuration);
+                    }
+
+                    // 非主线手百端外调起逻辑判断
+                    if (!isBaiduBox) {
+                        newItem = invokeBoxHandle(newItem);
+                    }
+
+                    formatData.push(newItem);
+                }
+            };
+
+        }
+        return formatData;
+    };
+
+    // 按钮跳转处理
+    const buttonsCouples = handleCommonItemRedirect(buttons_couple);
+
+    let buttons_couple_a: CommonItem[] = [];
+    let buttons_couple_b: CommonItem[] = [];
+    if (buttonsCouples.length === 4) {
+        buttons_couple_a = buttonsCouples.slice(0, 2);
+        buttons_couple_b = buttonsCouples.slice(2, 4);
+    }
+
+    // 金刚位数据处理
+    const tagListData = handleCommonItemRedirect(tagList);
+
+    // banner数据处理
+    const bannerListData = handleCommonItemRedirect(bannerList);
+
+    // 氛围模式logo点击区
+    const [logoConfData] = handleCommonItemRedirect([logoConf]);
+
+    // 整卡公共跳转处理方法
+    const handleRedirect = function (url: string, tplData: NewTplData, sfOptions: string): UrlParams {
+        const itemQueryParams: {
+            word?: string;
+            sa?: string;
+            topic_id?: numberic;
+        } = {};
+        const urlInfo = parse_url(url) as UrlInfo;
+        const hostName = urlInfo.host;
+        const path = urlInfo.path;
+        parse_str(urlInfo.query, itemQueryParams);
+        const itemWord = itemQueryParams.word || '';
+        const itemSa = itemQueryParams.sa || '';
+        const topicId = itemQueryParams.topic_id || '';
+        let urlParams: UrlParams = {
+            tcUrl: '',
+            type: ''
+        };
+
+        // 百家号链接处理
+        if (hostName && hostName.includes('baijiahao')) {
+            if (
+                tplData.bjh_na
+                && tplData.bjh_na.easyBrowse === 1
+                && tplData.bjh_na.easyBrowseConfirm === 1
+                && tplData.bjh_na.nid
+                && tplData.bjh_na.thread_id
+                && supportBjhNa()
+            ) {
+                const easyBrowseUrlPrefix = 'https://mbd.baidu.com/newspage/data/landingreact?pageType=2&nid=news_';
+                tplData.easyBrowseUrl = `${easyBrowseUrlPrefix}${tplData.bjh_na.nid}&sourceFrom=search`;
+                tplData.easybrowse = {
+                    type: 'bjh',
+                    data: {
+                        ...tplData.bjh_na,
+                        url: tplData.easyBrowseUrl
+                    }
+                };
+                urlParams = Util.makeTcLink(tplData.easyBrowseUrl, {
+                    easybrowse: tplData.easybrowse
+                });
+            }
+            else {
+                urlParams = Util.makeTcLink(url, {
+                    is_sf: true,
+                    cyc: 1
+                });
+            }
+        }
+
+        // sf处理
+        else if (path && path.endsWith('/sf')) {
+            urlParams = Util.makeSfLink(url, {
+                options: sfOptions,
+                cyc: '1',
+                undecode: '1'
+            });
+        }
+
+        // 话题处理
+        else if (tplData.is_topic === 2 && itemWord && itemWord.startsWith('#') && itemWord.endsWith('#')) {
+            const topicLink = Util.makeSearchLink({
+                'wd': itemWord,
+                'sa': itemSa
+            }) + (topicId ? `&topic_id=${topicId}` : '');
+            urlParams = Util.makeTcLink(topicLink, {
+                'undecode': 1
+            });
+        }
+
+        // h5处理
+        else {
+            urlParams = Util.makeTcLink(url);
+
+            // 端外打点添加直播参数
+            if (live_room_id) {
+                urlParams.clickData = JSON.stringify({
+                    clk_info: {
+                        live_room_id: live_room_id
+                    }
+                });
+            }
+        }
+        return urlParams;
+    };
+
+    // 调起标志
+    const na_invoke_type_ret = na_invoke_type ? parseInt(na_invoke_type, 10) : 0;
+    const jumpFlag = na_invoke_type_ret === 1 || na_invoke_type_ret === 3;
+
+    // 11.13以上添加searchParams参数，支持打点和降级逻辑
+    const isNew = version_compare(bd_version, '11.13') !== -1;
+
+    // 11.7以上支持短视频na
+    const supportNa = version_compare(bd_version, '11.7') !== -1;
+
+    // 整卡跳转，remind: 历史字段问题，url、bigImg.url、titleUrl是同一个字段值!!!
+    let urlParamsRet: UrlParams = {
+        tcUrl: '',
+        type: ''
+    };
+    let urlRet = '';
+    const logObj = {
+        action: '',
+        addLog: false,
+        degrade_url: '',
+        scheme: '',
+        isNew: false,
+        isNa: false,
+        isLiveNa: false,
+        na_invoke_type: '',
+        openBox: false,
+        url_app_degrade: '',
+        baidulive_param: {},
+        sourceOptions: {},
+        invokeScheme: '',
+        invokeFailUrl: ''
+    };
+
+    // 添加视频极速页来源区分字段,详见 http://wiki.baidu.com/pages/viewpage.action?pageId=1037287057
+    if (url && resource_type === 'video') {
+        url = `${url}&fr0=A&fr1=A`;
+    }
+
+    // 小程序跳转
+    if (url && url_xcx_params && degrade_url) {
+        urlParamsRet = handleXcxRedirect(url, degrade_url, url_xcx_params, tplData);
+        urlRet = urlParamsRet.tcUrl;
+    }
+
+    // 短视频NA
+    else if (
+        isbaiduboxapp
+        && supportNa
+        && baiduvideo_param
+        && jumpFlag
+    ) {
+        const videoObj = {
+            na_invoke_type,
+            baiduvideo_param,
+            link: url,
+            action: 'invokeNaLp'
+        };
+        urlRet = handleDspNaRedirect(videoObj, isAndroid, tplInfo, reqData, isNew);
+        logObj.degrade_url = url;
+        logObj.scheme = urlRet;
+        logObj.action = 'invokeNaLp';
+        logObj.addLog = true;
+        logObj.isNew = isNew;
+        logObj.isNa = true;
+        logObj.na_invoke_type = na_invoke_type;
+        if (!isNew) {
+            urlRet = '';
+        }
+    }
+
+    // 直播NA
+    else if (
+        isbaiduboxapp
+        && !isBaiduBoxLite
+        && baidulive_param
+        && isset(baidulive_param.id)
+    ) {
+        const liveObj = {
+            baidulive_param,
+            isLiveNaStatusUpdated,
+            live_room_id,
+            live_status,
+            live_type,
+            link: url,
+            action: 'invoke_live_na'
+        };
+        logObj.baidulive_param = baidulive_param;
+        logObj.degrade_url = url;
+        logObj.action = 'invoke_live_na';
+        logObj.addLog = true;
+        logObj.isNew = isNew;
+        logObj.isLiveNa = true;
+        urlRet = handleLiveNaRedirect(liveObj, tplInfo, reqData, isNew);
+        logObj.scheme = urlRet;
+        if (!isNew) {
+            urlRet = '';
+        }
+    }
+    else if (url) {
+        urlParamsRet = handleRedirect(url, tplData, sfOptions);
+        urlRet = urlParamsRet.tcUrl;
+    }
+
+    let supportWiseInvoke = true;
+
+    // 小程序端外调起
+    if (!isBaiduBox && url_xcx_params && url_xcx_params.xcx_appkey) {
+        logObj.invokeScheme = makeXcxScheme(url_xcx_params);
+        logObj.invokeFailUrl = degrade_url;
+    }
+
+    // 直播端外调起
+    else if (!isBaiduBox && baidulive_param && baidulive_param.id) {
+        const liveObj = {
+            baidulive_param,
+            link: url,
+            action: 'invoke_live_na'
+        };
+
+        // eslint-disable-next-line max-len
+        logObj.invokeScheme = handleLiveNaRedirect(liveObj, tplInfo, reqData, false);
+        logObj.invokeFailUrl = originUrl;
+    }
+
+    // h5端外调起
+    else if (!isBaiduBox && h5_params && h5_params.url_app) {
+        logObj.invokeScheme = makeSearchScheme(h5_params.url_app);
+        logObj.invokeFailUrl = originUrl;
+    }
+    else {
+
+        // 当前类型不支持调起
+        supportWiseInvoke = false;
+    }
+
+    // 统一添加开关字段
+    if (supportWiseInvoke) {
+        logObj.addLog = true;
+        logObj.openBox = true;
+        logObj.sourceOptions = sourceOptions;
+    }
+
+    // banner下屏蔽整卡点击
+    if (isBanner) {
+        urlRet = '';
+        urlParamsRet = {
+            tcUrl: '',
+            type: ''
+        };
+    }
+
+    const bigImgRet = bigImg as {
+        src: string;
+        url: string;
+        lyParams?: UrlParams;
+        params?: UrlParams;
+        paddingBottom?: string;
+    };
+    if (bigImg && bigImg.url) {
+        bigImgRet.lyParams = Util.makeTcLink(bigImg.url, {
+            is_sf: true,
+            cyc: 1,
+            extra: 'goXR'
+        });
+        bigImgRet.url = urlRet;
+        bigImgRet.params = urlParamsRet;
+        bigImgRet.paddingBottom = '39.6%';
+    }
+
+    // 视频分发，xpath需添加分发标记。判断规则：视频样式或直播样式且非直播预告无视频落地页
+    // type = 1:视频 2:图片 3:直播 4:VR直播，videoLive代表直播预告落地页是否视频直播状态分为直播预告、直播中、直播回放、直播已结束
+    let addVdCyc = false;
+    if (type === 1 || (type === 3 && !(type_text === '直播预告' && +videoLive === 0))) {
+        addVdCyc = true;
+    }
+
+    // tips数据
+    let headTipsRet = {};
+    if (headTips && headTips.text) {
+        headTips.text = headTips.text.length > 20 ? headTips.text.substring(0, 20) + '...' : headTips.text;
+        if (headTips.link) {
+            headTips.showArrow = true;
+            const formatObj = [
+                {
+                    ...headTips
+                }
+            ];
+            headTipsRet = handleCommonItemRedirect(formatObj)[0];
+        }
+    }
+
+    // 倒计时组件处理
+    if (headCountdown && headCountdown.startTime && headCountdown.endTime) {
+        headCountdown.counting = false;
+        const currentTime = new Date().getTime();
+        if (currentTime >= headCountdown.startTime && currentTime <= headCountdown.endTime) {
+            headCountdown.counting = true;
+            headCountdown.currentTime = currentTime;
+        }
+        headCountdown.timeDown = formatTimeDown(+headCountdown.endTime);
+    }
+
+    // 通顶处理
+    const bgPeakConf = pageData.peakConf;
+    /* eslint-enable @typescript-eslint/no-object-literal-type-assertion */
+    const bgPeak = tplData.bgPeak || {} as unknown as BgPeak;
+    const isPeak = bgPeakConf && bgPeakConf.peak;
+    if (bgPeak && bgPeak.startColor && bgPeak.endColor) {
+
+        // D20灰色背景色
+        const bgColor = isDarkMode ? '#080808' : '#f5f5f5';
+        const eRgb = hex2rgb(bgPeak.endColor);
+        if (isPeak) {
+            bgPeak.topHeight = bgPeakConf.topHeight;
+            // eslint-disable-next-line max-len
+            bgPeak.gradualUp = `background-image:linear-gradient(${bgPeak.startColor},${bgPeak.startColor} ${bgPeak.topHeight}px, ${bgColor} ${+bgPeak.topHeight + 1}px, ${bgColor});padding-top:${bgPeak.topHeight}px`;
+        }
+
+        // eslint-disable-next-line max-len
+        bgPeak.gradualMiddle = `background-image:linear-gradient(${bgPeak.startColor}, ${bgPeak.endColor})`;
+
+        // 开启了组卡的沉浸式
+        if (tplInfo && tplInfo.theme && tplInfo.theme.theme && tplInfo.theme.bgColor) {
+            bgPeak.gradualBottom = `background-color: ${tplInfo.theme.bgColor}`;
+        }
+        else {
+            // eslint-disable-next-line max-len
+            bgPeak.gradualBottom = `background-image:linear-gradient(rgba(${eRgb.r}, ${eRgb.g}, ${eRgb.b}, 1), rgba(${eRgb.r}, ${eRgb.g}, ${eRgb.b}, 0))`;
+        }
+    }
+
+    // 是否theme氛围
+    const theme = tplInfo.theme as unknown as {
+        backColorBto: string;
+        backColorTop: string;
+    };
+    const isTheme = theme && theme.backColorBto && theme.backColorTop;
+    const { vid, pageUrl } = baiduvideo_param?.videoInfo || {};
+    const videoInfo = {
+        vid,
+        pageUrl
+    };
+    console.dir(dynamicList);
+    let addParams = Object.assign({}, dynamicList[0].urlParams);
+    let area = '北京'
+    addParams.originUrl = `${addParams.originUrl}&city=${area}-${area}`
+    console.dir(addParams);
+
+    // 是否为单banner，没有配置banner 金刚位 标题、摘要等
+    const isSingleBanner = (bigImgRet || isBanner)
+        && (!tagListData || tagListData.length < 4)
+        && (!buttonsCouples || buttonsCouples.length === 0)
+        && (!title && !abstract && !source && tplInfo?.theme?.theme === 'dark');
+    return {
+        isPeak,
+        bgPeak,
+        isTheme,
+        headTips: headTipsRet,
+        headTitle,
+        headCountdown: headCountdown || {},
+        rel_title,
+        rel_desc,
+        rel_img,
+        news_title: rel_news_title,
+        isFeature,
+        title,
+        url: urlRet,
+        urlParams: urlParamsRet,
+        jumpUrl,
+        tplInfo,
+        bigImg: bigImgRet || {},
+        titleUrl: urlRet,
+        titleParams: urlParamsRet,
+        abstract,
+        imgSrc,
+        source,
+        time,
+        voteData,
+        voteUrl,
+        buttons_couple: buttonsCouples,
+        buttons_couple_a,
+        buttons_couple_b,
+        type,
+        type_text,
+        modulePrefix,
+        loadMore,
+        is_topic,
+        is_group,
+        group_id,
+        headColor,
+        headTextColor,
+        logObj,
+        resource_type,
+        addVdCyc,
+        dynamicList,
+        currentTabIndex,
+        tagList: tagListData,
+        tagStyle,
+        label,
+        bannerListData,
+        isBanner,
+        useVideoPlayer,
+        videoMedia,
+        videoDuration: formatDuration(videoDuration),
+        videoInfo,
+        D20Flag,
+
+        // 图片展现比例，1为5:2，默认0为16:9
+        imgSizeType: +isNewImgSize === 1 ? 'z' : 'w',
+        logoConf: logoConfData,
+        isSingleBanner,
+        mediaType,
+        addParams
+    };
+}

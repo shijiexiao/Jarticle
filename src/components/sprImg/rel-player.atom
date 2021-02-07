@@ -1,0 +1,569 @@
+<template>
+    <div
+        ref="playerContainer"
+        :style="{
+            opacity: hidePlayerView && isLivingPlay ? 0 : 1
+        }"
+        :data-module="resourceType === 'video' ? 'vd-cyc-vd-autoplay-' + videoCurrentTime : ''"
+        class="player-container"
+        rl-type="stop"
+        @click="videoClick($event)"
+    >
+        <c-link
+            :url="videoUrl"
+            :params="videoParams"
+        >
+            <div
+                a-show="showPlayer"
+                ref="player"
+                class="player"
+            />
+        </c-link>
+        <div class="wifiTipContainer">正在非WIFI环境下观看</div>
+    </div>
+</template>
+
+<script type="config">
+{
+    props: {
+        tplInfo: {
+            type: Object,
+            default: {}
+        },
+        src: {
+            type: String,
+            default: ''
+        },
+        poster: {
+            type: String,
+            default: ''
+        },
+        isWifi: {
+            type: [String, Boolean],
+            default: 'unknown'
+        },
+        // h5落地页保留跳转
+        videoParams: {
+            type: Object,
+            default: {}
+        },
+        videoUrl: {
+            type: String,
+            default: ''
+        },
+        customStyle: {
+            type: Object,
+            default: {}
+        },
+        videoInfo: {
+            type: Object,
+            default: {}
+        },
+        resourceType: {
+            type: String,
+            default: ''
+        },
+        showIndex: {
+            type: Number,
+            default: 0
+        },
+        initPlayer: {
+            type: Boolean,
+            default: true
+        },
+        inLoopBanner: {
+            type: Boolean,
+            default: false
+        },
+        isCurrentShow: {
+            type: Boolean,
+            default: true
+        }
+    },
+    data: {
+        showPlayer: false,
+
+        // 直播自动播放会开启隐藏
+        isLivingPlay: resourceType === 'live',
+        hidePlayerView: true,
+        startTime: 0,
+        videoCurrentTime: 0
+    },
+    components: {
+        'c-link': 'search-ui/Link/Link'
+    }
+}
+</script>
+<script>
+// 1.弱化样式，wifi下自动播放
+// 2.滑动，可视区域内播放，超出可视区域，暂停，回到可视区域，继续播放
+// 3.离开页面，记录状态，回到页面，保持状态
+// 4.点击跳转对应落地页
+import AlaUtil from '@baidu/ala-util/ala';
+import player from '@baidu/massPlayer';
+import Control from '@baidu/splayer-control';
+import {throttle} from '@baidu/ala-util';
+import ua from '@searchfe/user-agent';
+import compare from 'versions-compare';
+import videoUtils from 'static/common/videoUtils';
+
+const massPlayer = player.getInstance();
+const sPlayer = massPlayer.sPlayer;
+sPlayer.install('control', Control);
+const control = sPlayer.getPlugins('control');
+
+// 自动播切换时长临界值
+const BANNER_LOOP = 10;
+
+// player config
+const PLAYER_CONFIG = {
+    living: {
+        execute: [],
+        playsinline: true,
+        autorotate: 'false',
+        t7playerinline: 'search',
+        ios: {
+            playInBox: false
+        },
+        autoplay: false,
+        muted: true,
+        controls: false
+    },
+    video: {
+        execute: ['control'],
+        playsinline: true,
+        autorotate: 'false',
+        t7playerinline: 'search',
+        ios: {
+            playInBox: false
+        },
+        autoplay: 'autoplay',
+        muted: true,
+        controls: true
+    }
+};
+// 该视频是否发送了分发日志
+let cycSended = false;
+
+module.exports = {
+    mounted() {
+        // 移除页面事件、控件销毁、sPlayer初始化
+        if (this.inLoopBanner) {
+            this.scrollDetach();
+            this.unbindPageEvent();
+            this.sendVideoStatus('beforeInit');
+            sPlayer.off('timeupdate');
+            sPlayer.currentTime = 0;
+            control.destroy();
+        }
+
+        // 设备信息
+        if (!this.preCheckDevice()) {
+            return;
+        }
+
+        // 绑定端页面事件
+        this.bindPageEvent();
+
+        // 绑定播放器控件事件
+        this.bindAllVideoEvents();
+
+        // wifi下自动播放 4g下自动播放
+        this.handleAutoPlay();
+    },
+    watch: {
+        isCurrentShow: {
+            handler(newVal) {
+                if (!newVal) {
+                    this.scrollDetach();
+                    this.unbindPageEvent();
+                }
+            }
+        }
+    },
+    methods: {
+        preCheckDevice() {
+            const isBaiduBoxMain = ua.isBaiduBox() && !ua.isBaiduBoxJisu();
+            const isIos8 = ua.iOSVersion()[0] === 8;
+
+            // 低端 ios、非手百主线 不初始化播放器
+            if (isIos8 || !isBaiduBoxMain) {
+                this.sendVideoStatus('initFail');
+                return false;
+            }
+
+            return true;
+        },
+        sendVideoStatus(status) {
+            this.$emit('handleVideoStatus', status, this.showIndex);
+        },
+        videoClick(e) {
+            this.videoCurrentTime = sPlayer && Math.floor(sPlayer.currentTime) || 0;
+            setTimeout(() => {
+                this.$emit('videoClick', e);
+            });
+        },
+        /**
+         * 滚动事件绑定
+         */
+        scrollAttach() {
+            if (this.active) {
+                return;
+            }
+            this.active = true;
+            window.addEventListener('scroll', this.onScroll);
+        },
+        /**
+         * 移除滚动事件
+         */
+        scrollDetach() {
+            if (!this.active) {
+                return;
+            }
+            this.active = false;
+            window.removeEventListener('scroll', this.onScroll);
+        },
+        /**
+         * 是否处于可视播放区域
+         */
+        outPlayView() {
+            const player = this.$refs.player;
+            if (!player) {
+                return false;
+            }
+            const rect = player.getBoundingClientRect();
+            return rect.bottom - rect.height / 2 <= 0 || rect.top + rect.height / 2 >= window.innerHeight;
+        },
+        /**
+         * 页面滚动处理，可视区域内播放，外暂停
+         */
+        onScroll: throttle(function () {
+            this.playStateChange();
+        }, 200),
+        /**
+         * wifi 4g 下创建播放器实例
+         */
+        handleAutoPlay() {
+            this.getNetWork().then((networkType) => {
+                let niubi = 'networkType';
+                if (niubi) {
+                    this.initMassPlayer();
+                }
+                else {
+                    this.sendVideoStatus('initFail');
+                }
+            });
+        },
+        /**
+         * 控件事件绑定 http://icode.baidu.com/repos/baidu/ps-se-fe-static/massplayer/tree/master:packages/plugins/splayer-control
+         */
+        bindAllVideoEvents() {
+            const cycTime = 3;
+            sPlayer.on('voiceBtnClicked.autoPlayer', this.voiceBtnClicked);
+
+
+            let hasSetStartTime = false;
+            sPlayer.on('timeupdate', () => {
+                const currentTime = Math.ceil(sPlayer.currentTime);
+
+                // loop banner 播放10s 自动切换
+                // 做差值判断播放时长解决 hls 直播流首次触发timeupdate 时 currentTime 不为 0 的问题
+                if (this.inLoopBanner) {
+                    if (!hasSetStartTime) {
+                        this.startTime = currentTime;
+                        hasSetStartTime = true;
+                    }
+                    if (currentTime - this.startTime > BANNER_LOOP) {
+                        this.sendVideoStatus('playThreshold');
+                        this.showPlayer = false;
+                        sPlayer.off('timeupdate');
+                        sPlayer.currentTime = 0;
+                    }
+                }
+
+                // 自动播打点
+                if (this.resourceType !== 'live') {
+                    const duration = sPlayer.duration;
+
+                    // 打自动播放的cyc点
+                    if (duration && ((duration > cycTime && currentTime >= cycTime)
+                        || (duration <= cycTime && currentTime >= duration))) {
+                        this.sendAutoPlayLog(currentTime, duration);
+                    }
+                }
+            });
+
+            sPlayer.on('ended', () => {
+
+                // 视频播放结束，视频ended事件触发多次，增加截流
+                if (!this.handleAble(500)) {
+                    return;
+                }
+                setTimeout(() => {
+                    this.playended();
+                    this.sendVideoStatus('playend');
+                }, 100);
+            });
+        },
+        // 'vd-cyc' 标识需要打在自动播放的 xpath 中, 但该 xpath 会打上 'vd-autoplay-\d+',
+        // 该标记会造成分发丢失, 因此用正则去掉该标记.
+        filterXpath(xpath) {
+            return xpath.replace(/\((vd-cyc)?-?vd-autoplay-\d+\)/, function (params) {
+                return params.indexOf('vd-cyc') > -1 ? '(vd-cyc)' : '';
+            });
+        },
+        sendAutoPlayLog(currentTime, duration) {
+            if (!cycSended) {
+                cycSended = true;
+                const loc = sPlayer.loc || '';
+                const extra = JSON.stringify({
+                    cur: currentTime,
+                    dur: duration,
+                    loc: encodeURIComponent(loc)
+                });
+                AlaUtil.sendLog({
+                    cyc: '1',
+                    type: 'o',
+                    action: 'autoplay',
+                    extra,
+                    xpath: this.filterXpath(videoUtils.getXpath(this.$refs.player))
+                }, this.tplInfo);
+            }
+        },
+        /**
+         * 防抖动处理
+         */
+        handleAble(t) {
+            if (this.handleTimeDur && (new Date().getTime() - this.handleTimeDur < t)) {
+                return false;
+            }
+            this.handleTimeDur = new Date().getTime();
+            return true;
+        },
+        voiceBtnClicked(status) {
+            event.preventDefault();
+            event.stopPropagation();
+            const s = status === true || status === 'Off' ? 'off' : 'open';
+            AlaUtil.sendLog({
+                type: 'b',
+                action: `qmbd_voice_${s}`
+            }, this.tplInfo);
+        },
+        playended() {
+            this.showPlayer = false;
+            sPlayer.closeVideo();
+        },
+        /**
+         * 获取网络状态
+         */
+        getNetWork() {
+            return new Promise((res, rej) => {
+                const netType = 'getNetworkType' + Date.now();
+                window[netType] = jsonData => {
+                    let networkType = 'unknown';
+                    try {
+                        networkType = JSON.parse(jsonData).data.networkType;
+                    }
+                    catch (e) {
+                    }
+                    res(networkType);
+                };
+                window.Box.schema('baiduboxapp://v19/utils/getNetworkType?callback=' + netType);
+            });
+        },
+        /**
+         * 初始化播放器
+         * http://icode.baidu.com/repos/baidu/ps-se-fe-static/massplayer/blob/master:docs/how2use.md
+         */
+        initMassPlayer() {
+            this.showPlayer = true;
+            const props = {
+                el: this.$refs.player,
+                src: this.src
+            };
+
+            if (this.resourceType === 'video') {
+                const videoConfig = PLAYER_CONFIG.video;
+                videoConfig.poster = this.poster;
+                videoConfig.t7playerext = this.videoInfo.pageUrl;
+                Object.assign(props, videoConfig);
+
+                // 控件初始化
+                this.controlSetConfig();
+            }
+            else if (this.resourceType === 'live') {
+                Object.assign(props, PLAYER_CONFIG.living, {poster: this.poster});
+            }
+
+            // 设置播放器自定义样式
+            Object.keys(this.customStyle || {}).forEach(key => {
+                if (key && this.customStyle[key]) {
+                    sPlayer.css('main', key, this.customStyle[key]);
+                }
+            });
+            massPlayer.openPlayer(props).then(res => {
+                res && sPlayer.currentTime === 0;
+            });
+
+            // 播放器初始化后获取video的error状态
+            setTimeout(() => {
+                this.hidePlayerView = false;
+                const error = sPlayer.error;
+
+                // error
+                if (error) {
+                    this.sendVideoStatus('initFail');
+                    this.scrollDetach();
+                    this.showPlayer = false;
+                }
+            }, 500);
+
+            // 监听滚动，不在可视区域暂停播放
+            this.scrollAttach();
+
+            // 播放器状态
+            this.sendVideoStatus(this.showPlayer ? 'initSuccess' : 'initFail');
+        },
+        /**
+         * 配置简版控件
+         * http://icode.baidu.com/repos/baidu/ps-se-fe-static/massplayer/tree/master:packages/plugins/splayer-control
+         */
+        controlSetConfig() {
+            const conf = {
+                type: 'simple',
+                poster: this.poster
+            };
+            control.setConfig(conf);
+        },
+        /**
+        * 同步播放进度到端，用于落地页自动续播
+        * 方案：http://agroup.baidu.com/se-video/md/article/2765835
+        */
+        setVideoHistoryPlayerInfo() {
+            if (!(ua.isIOS() && ua.isBaiduBox() && compare(ua.baiduBoxVersion(), '11.24.0') >= 0)) {
+                return;
+            }
+
+            const {pageUrl, vid} = this.videoInfo;
+            if (!vid || !pageUrl) {
+                return;
+            }
+            const saveParams = encodeURIComponent(JSON.stringify({
+                vid,
+                pageUrl,
+                progress: Math.ceil(sPlayer.currentTime) || 0
+            }));
+            const seekParams = encodeURIComponent(JSON.stringify({
+                vid,
+                pageUrl,
+                seek: Math.ceil(sPlayer.currentTime) || 0
+            }));
+
+            window.Box.schema(`baiduboxapp://video/saveVideoHistoryPlayerInfo?params=${saveParams}`);
+            window.Box.schema(`baiduboxapp://video/seekPlayer?params=${seekParams}`);
+        },
+        onVideoPlay(reset = false) {
+            if (!reset && !sPlayer.paused) {
+                return;
+            }
+            this.hidePlayerView = false;
+            sPlayer.play();
+        },
+        onVideoPause() {
+            if (sPlayer.paused) {
+                return;
+            }
+            this.hidePlayerView = true;
+            sPlayer.pause();
+        },
+        /**
+         * 根据当前视图位置，改变播放器状态
+         */
+        playStateChange() {
+            if (!this.showPlayer || !sPlayer) {
+                return;
+            }
+            this.outPlayView() ? this.onVideoPause() : this.onVideoPlay();
+        },
+        bindPageEvent() {
+            // 新框架事件 http://wiki.baidu.com/pages/viewpage.action?pageId=597555853
+            $(document).on('bbabeepagedidactive', () => {
+                this.afterPageEnter();
+            });
+            $(document).on('bbabeepagewillinactive', () => {
+                this.beforePageLeave();
+            });
+            // 上边页面事件安卓不生效
+            $(document).on('visibilitychange', () => {
+                document.hidden ? this.beforePageLeave() : this.afterPageEnter();
+            });
+            // h5页面变化
+            $(window).on('pageshow', () => {
+                this.afterPageEnter();
+            });
+        },
+        /**
+         * 重新进入页面后，需重新播放
+         */
+        afterPageEnter() {
+            const reset = this.resourceType === 'video' && !this.inLoopBanner;
+            if (reset) {
+                sPlayer.currentTime = 0;
+            }
+            setTimeout(() => {
+                this.showPlayer && this.onVideoPlay(reset);
+            }, 500);
+        },
+        /**
+         * 在页面离开前保留播放状态并暂停播放
+         */
+        beforePageLeave() {
+            if (!this.outPlayView()) {
+                this.onVideoPause();
+            }
+
+            // 非loop banner，同步播放进度
+            if (this.resourceType === 'video' && !this.inLoopBanner) {
+                this.setVideoHistoryPlayerInfo();
+            }
+        },
+        unbindPageEvent() {
+            $(document).off('bbabeepagedidactive');
+            $(document).off('bbabeepagewillinactive');
+            $(document).off('visibilitychange');
+            $(window).off('pageshow');
+        },
+        destroyed() {
+            this.playStateChange();
+            this.scrollDetach();
+            this.unbindPageEvent();
+        }
+    }
+};
+</script>
+
+<style module>
+.player {
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+.wifiTipContainer {
+    position: absolute;
+    bottom: 1.41rem;
+    color: #fff;
+    background-color: rgba(0, 0, 0, .8);
+    border: 1px solid rgba(255, 255, 255, .5);
+    border-radius: .03rem;
+    left: 50%;
+    width: 1.72rem;
+    height: .38rem;
+    line-height: .38rem;
+    margin-left: -.86rem;
+    opacity: .8;
+    text-align: center;
+    z-index: 100;
+}
+</style>
